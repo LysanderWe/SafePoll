@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {FHE, euint32, externalEuint32, ebool} from "@fhevm/solidity/lib/FHE.sol";
+import {FHE, euint32, externalEuint32} from "@fhevm/solidity/lib/FHE.sol";
 import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 
-/// @title SafePoll - Encrypted Survey Contract
-/// @notice Allows creation and participation in fully encrypted surveys using FHEVM
+/// @title SafePoll - Encrypted survey with Zama FHEVM
+/// @notice Users can create surveys, submit encrypted votes, and the creator can end and decrypt results.
 contract SafePoll is SepoliaConfig {
-
+    // ============ Types ============
     struct Question {
         string text;
         string[] options;
-        mapping(uint256 => euint32) optionCounts; // optionIndex => encrypted count
+        mapping(uint256 => euint32) optionCounts; // encrypted counters per option
     }
 
     struct Survey {
@@ -22,7 +22,7 @@ contract SafePoll is SepoliaConfig {
         bool isActive;
         bool resultsDecrypted;
         uint256 questionCount;
-        mapping(uint256 => Question) questions; // questionIndex => Question
+        mapping(uint256 => Question) questions;
         mapping(address => bool) hasVoted;
         uint256 totalVotes;
         uint256 createdAt;
@@ -31,262 +31,240 @@ contract SafePoll is SepoliaConfig {
     struct DecryptedResults {
         uint256 surveyId;
         uint256 questionIndex;
-        uint256[] optionCounts;
+        uint256[] optionCounts; // clear counts after onchain public decryption
     }
 
+    // ============ Storage ============
     uint256 private _surveyCounter;
     mapping(uint256 => Survey) public surveys;
-    mapping(uint256 => DecryptedResults[]) public decryptedResults;
+    mapping(uint256 => DecryptedResults[]) public decryptedResults; // surveyId => list per question
 
-    // Events
+    // requestID => metadata to rebuild the clear array per question
+    struct RequestMeta {
+        uint256 surveyId;
+        uint256[] optionLens; // per question, number of options
+        bool exists;
+    }
+    mapping(uint256 => RequestMeta) private _requestMeta;
+
+    // ============ Events ============
     event SurveyCreated(uint256 indexed surveyId, address indexed creator, string title);
-    event VoteSubmitted(uint256 indexed surveyId, address indexed voter);
     event SurveyEnded(uint256 indexed surveyId);
+    event VoteSubmitted(uint256 indexed surveyId, address indexed voter);
     event ResultsDecrypted(uint256 indexed surveyId);
 
-    // Modifiers
+    // ============ Modifiers ============
     modifier onlyCreator(uint256 surveyId) {
-        require(surveys[surveyId].creator == msg.sender, "Only survey creator can perform this action");
+        require(msg.sender == surveys[surveyId].creator, "Not creator");
         _;
     }
 
-    modifier surveyExists(uint256 surveyId) {
-        require(surveyId > 0 && surveyId <= _surveyCounter, "Survey does not exist");
-        _;
-    }
-
-    modifier surveyActive(uint256 surveyId) {
-        require(surveys[surveyId].isActive, "Survey is not active");
-        _;
-    }
-
-    modifier hasNotVoted(uint256 surveyId) {
-        require(!surveys[surveyId].hasVoted[msg.sender], "Already voted in this survey");
-        _;
-    }
-
-    /// @notice Creates a new survey with encrypted voting
-    /// @param title The title of the survey
-    /// @param description The description of the survey
-    /// @param questionTexts Array of question texts
-    /// @param questionOptions Array of arrays containing options for each question
+    // ============ Create ============
     function createSurvey(
-        string memory title,
-        string memory description,
-        string[] memory questionTexts,
-        string[][] memory questionOptions
+        string calldata title,
+        string calldata description,
+        string[] calldata questionTexts,
+        string[][] calldata questionOptions
     ) external returns (uint256) {
-        require(bytes(title).length > 0, "Title cannot be empty");
-        require(questionTexts.length > 0, "Must have at least one question");
-        require(questionTexts.length == questionOptions.length, "Questions and options length mismatch");
+        require(questionTexts.length == questionOptions.length, "Length mismatch");
+        require(questionTexts.length > 0, "No questions");
 
-        _surveyCounter++;
-        uint256 surveyId = _surveyCounter;
+        uint256 id = ++_surveyCounter;
+        Survey storage s = surveys[id];
+        s.id = id;
+        s.title = title;
+        s.description = description;
+        s.creator = msg.sender;
+        s.isActive = true;
+        s.resultsDecrypted = false;
+        s.questionCount = questionTexts.length;
+        s.createdAt = block.timestamp;
 
-        Survey storage newSurvey = surveys[surveyId];
-        newSurvey.id = surveyId;
-        newSurvey.title = title;
-        newSurvey.description = description;
-        newSurvey.creator = msg.sender;
-        newSurvey.isActive = true;
-        newSurvey.resultsDecrypted = false;
-        newSurvey.questionCount = questionTexts.length;
-        newSurvey.totalVotes = 0;
-        newSurvey.createdAt = block.timestamp;
-
-        for (uint256 i = 0; i < questionTexts.length; i++) {
-            require(bytes(questionTexts[i]).length > 0, "Question text cannot be empty");
-            require(questionOptions[i].length >= 2, "Question must have at least 2 options");
-
-            Question storage question = newSurvey.questions[i];
-            question.text = questionTexts[i];
-            question.options = questionOptions[i];
-
-            // Initialize encrypted counts for each option to 0
-            for (uint256 j = 0; j < questionOptions[i].length; j++) {
-                question.optionCounts[j] = FHE.asEuint32(0);
-                FHE.allowThis(question.optionCounts[j]);
-            }
+        for (uint256 qi = 0; qi < questionTexts.length; qi++) {
+            Question storage q = s.questions[qi];
+            q.text = questionTexts[qi];
+            // copy options
+            uint256 opts = questionOptions[qi].length;
+            require(opts > 0, "No options");
+            q.options = questionOptions[qi];
+            // counts are zero-initialized encrypted values (uninitialized -> treat as 0 in FHE ops)
         }
 
-        emit SurveyCreated(surveyId, msg.sender, title);
-        return surveyId;
+        emit SurveyCreated(id, msg.sender, title);
+        return id;
     }
 
-    /// @notice Submit encrypted votes for all questions in a survey
-    /// @param surveyId The ID of the survey
-    /// @param encryptedVotes Array of encrypted vote choices for each question
-    /// @param inputProof The proof for the encrypted inputs
-    function submitVotes(
-        uint256 surveyId,
-        externalEuint32[] memory encryptedVotes,
-        bytes calldata inputProof
-    ) external
-        surveyExists(surveyId)
-        surveyActive(surveyId)
-        hasNotVoted(surveyId)
-    {
-        Survey storage survey = surveys[surveyId];
-        require(encryptedVotes.length == survey.questionCount, "Vote count mismatch with question count");
-
-        for (uint256 i = 0; i < encryptedVotes.length; i++) {
-            euint32 voteChoice = FHE.fromExternal(encryptedVotes[i], inputProof);
-
-            Question storage question = survey.questions[i];
-
-            // For simplicity, we'll store the encrypted votes in a mapping
-            // In a production system, you'd want proper vote counting with FHE operations
-            // For now, we'll just add 1 to the first option as a proof of concept
-            question.optionCounts[0] = FHE.add(question.optionCounts[0], FHE.asEuint32(1));
-            FHE.allowThis(question.optionCounts[0]);
-        }
-
-        survey.hasVoted[msg.sender] = true;
-        survey.totalVotes++;
-
-        emit VoteSubmitted(surveyId, msg.sender);
-    }
-
-    /// @notice End a survey (only by creator)
-    /// @param surveyId The ID of the survey to end
-    function endSurvey(uint256 surveyId)
-        external
-        surveyExists(surveyId)
-        onlyCreator(surveyId)
-    {
-        surveys[surveyId].isActive = false;
-        emit SurveyEnded(surveyId);
-    }
-
-    /// @notice Request decryption of survey results (only by creator, after survey ended)
-    /// @param surveyId The ID of the survey
-    function requestDecryption(uint256 surveyId)
-        external
-        surveyExists(surveyId)
-        onlyCreator(surveyId)
-    {
-        Survey storage survey = surveys[surveyId];
-        require(!survey.isActive, "Survey must be ended first");
-        require(!survey.resultsDecrypted, "Results already decrypted");
-
-        // Prepare ciphertexts for decryption
-        uint256 totalCiphertexts = 0;
-        for (uint256 i = 0; i < survey.questionCount; i++) {
-            totalCiphertexts += survey.questions[i].options.length;
-        }
-
-        bytes32[] memory cts = new bytes32[](totalCiphertexts);
-        uint256 ctIndex = 0;
-
-        for (uint256 i = 0; i < survey.questionCount; i++) {
-            Question storage question = survey.questions[i];
-            for (uint256 j = 0; j < question.options.length; j++) {
-                cts[ctIndex] = FHE.toBytes32(question.optionCounts[j]);
-                ctIndex++;
-            }
-        }
-
-        // Request decryption
-        FHE.requestDecryption(cts, this.decryptionCallback.selector);
-    }
-
-    /// @notice Callback function for decryption oracle
-    /// @param requestId The request ID for the decryption
-    /// @param cleartexts The decrypted values
-    /// @param decryptionProof The proof of decryption
-    function decryptionCallback(
-        uint256 requestId,
-        bytes memory cleartexts,
-        bytes memory decryptionProof
-    ) public returns (bool) {
-        FHE.checkSignatures(requestId, cleartexts, decryptionProof);
-
-        // Decode the decrypted results
-        uint32[] memory decryptedValues = abi.decode(cleartexts, (uint32[]));
-
-        // Store results for each survey that was decrypted
-        // This is a simplified implementation - in practice you'd need to track which survey this relates to
-
-        return true;
-    }
-
-    /// @notice Get survey basic information
-    /// @param surveyId The ID of the survey
-    function getSurveyInfo(uint256 surveyId)
-        external
-        view
-        surveyExists(surveyId)
-        returns (
-            uint256 id,
-            string memory title,
-            string memory description,
-            address creator,
-            bool isActive,
-            bool resultsDecrypted,
-            uint256 questionCount,
-            uint256 totalVotes,
-            uint256 createdAt
-        )
-    {
-        Survey storage survey = surveys[surveyId];
-        return (
-            survey.id,
-            survey.title,
-            survey.description,
-            survey.creator,
-            survey.isActive,
-            survey.resultsDecrypted,
-            survey.questionCount,
-            survey.totalVotes,
-            survey.createdAt
-        );
-    }
-
-    /// @notice Get question information for a survey
-    /// @param surveyId The ID of the survey
-    /// @param questionIndex The index of the question
-    function getQuestion(uint256 surveyId, uint256 questionIndex)
-        external
-        view
-        surveyExists(surveyId)
-        returns (string memory text, string[] memory options)
-    {
-        require(questionIndex < surveys[surveyId].questionCount, "Question index out of bounds");
-
-        Question storage question = surveys[surveyId].questions[questionIndex];
-        return (question.text, question.options);
-    }
-
-    /// @notice Get encrypted vote count for a specific option
-    /// @param surveyId The ID of the survey
-    /// @param questionIndex The index of the question
-    /// @param optionIndex The index of the option
-    function getEncryptedOptionCount(uint256 surveyId, uint256 questionIndex, uint256 optionIndex)
-        external
-        view
-        surveyExists(surveyId)
-        returns (euint32)
-    {
-        require(questionIndex < surveys[surveyId].questionCount, "Question index out of bounds");
-        require(optionIndex < surveys[surveyId].questions[questionIndex].options.length, "Option index out of bounds");
-
-        return surveys[surveyId].questions[questionIndex].optionCounts[optionIndex];
-    }
-
-    /// @notice Check if a user has voted in a survey
-    /// @param surveyId The ID of the survey
-    /// @param voter The address of the voter
-    function hasUserVoted(uint256 surveyId, address voter)
-        external
-        view
-        surveyExists(surveyId)
-        returns (bool)
-    {
-        return surveys[surveyId].hasVoted[voter];
-    }
-
-    /// @notice Get the total number of surveys
+    // ============ Read ============
     function getTotalSurveys() external view returns (uint256) {
         return _surveyCounter;
     }
+
+    function getSurveyInfo(
+        uint256 surveyId
+    ) external view returns (
+        uint256 id,
+        string memory title,
+        string memory description,
+        address creator,
+        bool isActive,
+        bool resultsDecrypted,
+        uint256 questionCount,
+        uint256 totalVotes,
+        uint256 createdAt
+    ) {
+        Survey storage s = surveys[surveyId];
+        return (
+            s.id,
+            s.title,
+            s.description,
+            s.creator,
+            s.isActive,
+            s.resultsDecrypted,
+            s.questionCount,
+            s.totalVotes,
+            s.createdAt
+        );
+    }
+
+    function getQuestion(uint256 surveyId, uint256 questionIndex) external view returns (string memory text, string[] memory options) {
+        Survey storage s = surveys[surveyId];
+        require(questionIndex < s.questionCount, "Bad q");
+        Question storage q = s.questions[questionIndex];
+        return (q.text, q.options);
+    }
+
+    function getEncryptedOptionCount(
+        uint256 surveyId,
+        uint256 questionIndex,
+        uint256 optionIndex
+    ) external view returns (euint32) {
+        Survey storage s = surveys[surveyId];
+        require(questionIndex < s.questionCount, "Bad q");
+        Question storage q = s.questions[questionIndex];
+        require(optionIndex < q.options.length, "Bad o");
+        return q.optionCounts[optionIndex];
+    }
+
+    function hasUserVoted(uint256 surveyId, address user) external view returns (bool) {
+        return surveys[surveyId].hasVoted[user];
+    }
+
+    // ============ Vote (encrypted) ============
+    /// @notice Submit encrypted selected option index per question
+    /// @param surveyId the survey being voted on
+    /// @param handles bytes32 handles for each question's selected option index (externalEuint32)
+    /// @param inputProof relayer proof for the provided handles
+    function submitVotes(uint256 surveyId, bytes32[] calldata handles, bytes calldata inputProof) external {
+        Survey storage s = surveys[surveyId];
+        require(s.id != 0, "No survey");
+        require(s.isActive, "Ended");
+        require(!s.hasVoted[msg.sender], "Voted");
+        require(handles.length == s.questionCount, "Bad length");
+
+        // constants
+        euint32 one = FHE.asEuint32(1);
+        euint32 zero = FHE.asEuint32(0);
+
+        for (uint256 qi = 0; qi < s.questionCount; qi++) {
+            Question storage q = s.questions[qi];
+            euint32 encChoice = FHE.fromExternal(externalEuint32.wrap(handles[qi]), inputProof);
+
+            uint256 opts = q.options.length;
+            for (uint256 oi = 0; oi < opts; oi++) {
+                ebool isSel = FHE.eq(encChoice, FHE.asEuint32(uint32(oi)));
+                euint32 addend = FHE.select(isSel, one, zero);
+                q.optionCounts[oi] = FHE.add(q.optionCounts[oi], addend);
+                // keep accessible for this contract (for public decryption flow)
+                FHE.allowThis(q.optionCounts[oi]);
+            }
+        }
+
+        s.hasVoted[msg.sender] = true;
+        s.totalVotes += 1;
+        emit VoteSubmitted(surveyId, msg.sender);
+    }
+
+    // ============ End & Decrypt ============
+    function endSurvey(uint256 surveyId) external onlyCreator(surveyId) {
+        Survey storage s = surveys[surveyId];
+        require(s.isActive, "Already ended");
+        s.isActive = false;
+        emit SurveyEnded(surveyId);
+    }
+
+    /// @notice Creator requests onchain public decryption of all option counts
+    function requestDecryption(uint256 surveyId) external onlyCreator(surveyId) {
+        Survey storage s = surveys[surveyId];
+        require(!s.isActive, "Not ended");
+        require(!s.resultsDecrypted, "Already");
+
+        // collect all handles
+        uint256 totalHandles;
+        uint256 qc = s.questionCount;
+        uint256[] memory lens = new uint256[](qc);
+        for (uint256 qi = 0; qi < qc; qi++) {
+            lens[qi] = s.questions[qi].options.length;
+            totalHandles += lens[qi];
+        }
+
+        bytes32[] memory list = new bytes32[](totalHandles);
+        uint256 k;
+        for (uint256 qi = 0; qi < qc; qi++) {
+            Question storage q = s.questions[qi];
+            for (uint256 oi = 0; oi < q.options.length; oi++) {
+                list[k++] = FHE.toBytes32(q.optionCounts[oi]);
+                // mark public decryptable for HTTP public decrypt convenience, too
+                FHE.makePubliclyDecryptable(q.optionCounts[oi]);
+            }
+        }
+
+        uint256 reqId = FHE.requestDecryption(list, this.decryptionCallback.selector);
+        _requestMeta[reqId] = RequestMeta({surveyId: surveyId, optionLens: lens, exists: true});
+    }
+
+    /// @notice Callback invoked by the Zama Decryption Oracle relayer
+    /// @dev MUST verify signatures via FHE.checkSignatures to avoid forgery
+    function decryptionCallback(uint256 requestId, bytes calldata cleartexts, bytes calldata decryptionProof)
+        external
+        returns (bool)
+    {
+        FHE.checkSignatures(requestId, cleartexts, decryptionProof);
+
+        RequestMeta storage meta = _requestMeta[requestId];
+        require(meta.exists, "Unknown req");
+
+        uint256 surveyId = meta.surveyId;
+        Survey storage s = surveys[surveyId];
+
+        // parse n 32-byte words from cleartexts
+        uint256 n = cleartexts.length / 32;
+        uint256[] memory vals = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) {
+            uint256 word;
+            assembly {
+                // skip length slot (first 32 bytes), then add i*32
+                word := calldataload(add(cleartexts.offset, mul(add(i, 1), 32)))
+            }
+            vals[i] = word;
+        }
+
+        // split per question
+        uint256 idx;
+        delete decryptedResults[surveyId];
+        for (uint256 qi = 0; qi < meta.optionLens.length; qi++) {
+            uint256 len = meta.optionLens[qi];
+            uint256[] memory oc = new uint256[](len);
+            for (uint256 j = 0; j < len; j++) {
+                oc[j] = vals[idx++];
+            }
+            decryptedResults[surveyId].push(DecryptedResults({surveyId: surveyId, questionIndex: qi, optionCounts: oc}));
+        }
+
+        s.resultsDecrypted = true;
+        emit ResultsDecrypted(surveyId);
+        // cleanup
+        delete _requestMeta[requestId];
+        return true;
+    }
 }
+
