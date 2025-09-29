@@ -56,20 +56,50 @@ task("safepoll:create", "Create a new survey")
     console.log(`Total surveys: ${total}`);
   });
 
-task("safepoll:survey", "Show survey info")
-  .addParam("id", "Survey id")
+task("safepoll:survey", "Show survey info (all or by id)")
+  .addOptionalParam("id", "Survey id (optional). If omitted, list all.")
   .setAction(async function (args: TaskArguments, hre) {
     const { ethers, deployments } = hre;
     const deployed = await deployments.get("SafePoll");
     const sp = await ethers.getContractAt("SafePoll", deployed.address);
-    const id = Number(args.id);
-    const info = await sp.getSurveyInfo(id);
-    console.log({ info });
-    const qCount = Number(info[6]);
-    for (let i = 0; i < qCount; i++) {
-      const [text, options] = await sp.getQuestion(id, i);
-      console.log(`Q${i}: ${text}`);
-      console.log(`  options: ${options.join(", ")}`);
+
+    const totalBn = await sp.getTotalSurveys();
+    const total = Number(totalBn);
+    if (total === 0) {
+      console.log("No surveys found");
+      return;
+    }
+
+    const ids: number[] = args.id ? [Number(args.id)] : Array.from({ length: total }, (_, i) => i + 1);
+
+    for (const id of ids) {
+      const info = await sp.getSurveyInfo(id);
+      const title = info[1] as string;
+      const desc = info[2] as string;
+      const creator = info[3] as string;
+      const isActive = info[4] as boolean;
+      const decrypted = info[5] as boolean;
+      const qCount = Number(info[6]);
+      const totalVotes = Number(info[7]);
+      const createdAt = Number(info[8]);
+
+      console.log(`Survey #${id}`);
+      console.log(`  title            : ${title}`);
+      console.log(`  description      : ${desc}`);
+      console.log(`  creator          : ${creator}`);
+      console.log(`  isActive         : ${isActive}`);
+      console.log(`  resultsDecrypted : ${decrypted}`);
+      console.log(`  questionCount    : ${qCount}`);
+      console.log(`  totalVotes       : ${totalVotes}`);
+      console.log(`  createdAt        : ${createdAt}`);
+
+      for (let i = 0; i < qCount; i++) {
+        const [text, options] = await sp.getQuestion(id, i);
+        console.log(`  Q${i}: ${text}`);
+        console.log(`    options: ${options.join(", ")}`);
+      }
+
+      console.log("");
     }
   });
 
@@ -127,4 +157,3 @@ task("safepoll:request-decrypt", "Request public decryption (creator only)")
     await tx.wait();
     console.log(`Request decrypt tx: ${tx.hash}`);
   });
-

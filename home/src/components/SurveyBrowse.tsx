@@ -15,7 +15,8 @@ export function SurveyBrowse() {
   const signerPromise = useEthersSigner();
 
   const { data: totalSurveys } = useReadContract({ address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'getTotalSurveys' });
-  const [surveyId, setSurveyId] = useState<string>('1');
+  const [surveyId, setSurveyId] = useState<string>('');
+  const [allSurveys, setAllSurveys] = useState<SurveyInfo[]>([]);
   const parsedId = useMemo(() => { const n = Number(surveyId); return Number.isFinite(n) && n > 0 ? BigInt(n) : undefined; }, [surveyId]);
 
   const { data: info } = useReadContract({ address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'getSurveyInfo', args: parsedId ? [parsedId] : undefined, query: { enabled: !!parsedId } }) as { data?: SurveyInfo };
@@ -28,6 +29,38 @@ export function SurveyBrowse() {
   const [results, setResults] = useState<number[][] | null>(null);
 
   // removed unused stub loader
+
+  // Load all surveys when totalSurveys updates
+  useEffect(() => {
+    const loadAll = async () => {
+      try {
+        const total = Number(totalSurveys || 0n);
+        if (!total) {
+          setAllSurveys([]);
+          setSurveyId('');
+          return;
+        }
+        const { getPublicClient } = await import('wagmi/actions');
+        const client = getPublicClient();
+        const list: SurveyInfo[] = [] as any;
+        for (let i = 1; i <= total; i++) {
+          const data = await client.readContract({
+            address: CONTRACT_ADDRESS,
+            abi: CONTRACT_ABI,
+            functionName: 'getSurveyInfo',
+            args: [BigInt(i)],
+          }) as SurveyInfo;
+          list.push(data);
+        }
+        setAllSurveys(list);
+        // auto-select first if none selected
+        if (!parsedId) setSurveyId('1');
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    loadAll();
+  }, [totalSurveys]);
 
   // Lightweight question loader using viem read calls sequentially
   useEffect(() => {
@@ -146,10 +179,31 @@ export function SurveyBrowse() {
   return (
     <div className="status-card">
       <h2 className="status-title">Browse & Vote</h2>
-      <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <label className="form-label">Survey ID</label>
-        <input className="text-input" style={{ maxWidth: 140 }} value={surveyId} onChange={(e) => setSurveyId(e.target.value)} />
-        <div style={{ color: '#6b7280' }}>Total: {String(totalSurveys || 0n)}</div>
+      <div className="form-group" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="form-label">Total Surveys: {String(totalSurveys || 0n)}</div>
+      </div>
+
+      {/* List all surveys */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {allSurveys.map((s, idx) => (
+          <div key={idx} className="status-item" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <div className="status-label">#{Number(s.id)} — {s.title}</div>
+              <div className="status-value" style={{ color: '#6b7280' }}>{s.description}</div>
+            </div>
+            <div className="status-item" style={{ border: 'none' }}>
+              <div className="status-label">Status</div>
+              <div className="status-value">{s.isActive ? 'Active' : 'Ended'}</div>
+            </div>
+            <div className="status-item" style={{ border: 'none' }}>
+              <div className="status-label">Votes</div>
+              <div className="status-value">{String(s.totalVotes)}</div>
+            </div>
+            <button className="submit-button" style={{ width: 'auto' }} onClick={() => setSurveyId(String(Number(s.id)))}>
+              Open
+            </button>
+          </div>
+        ))}
       </div>
 
       {info && (
