@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {FHE, euint32, externalEuint32} from "@fhevm/solidity/lib/FHE.sol";
+import {FHE, euint32, externalEuint32, ebool} from "@fhevm/solidity/lib/FHE.sol";
 import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 
 /// @title SafePoll - Encrypted survey with Zama FHEVM
@@ -83,10 +83,12 @@ contract SafePoll is SepoliaConfig {
         for (uint256 qi = 0; qi < questionTexts.length; qi++) {
             Question storage q = s.questions[qi];
             q.text = questionTexts[qi];
-            // copy options
+            // copy options safely (avoid nested dynamic array direct assignment)
             uint256 opts = questionOptions[qi].length;
             require(opts > 0, "No options");
-            q.options = questionOptions[qi];
+            for (uint256 oi = 0; oi < opts; oi++) {
+                q.options.push(questionOptions[qi][oi]);
+            }
             // counts are zero-initialized encrypted values (uninitialized -> treat as 0 in FHE ops)
         }
 
@@ -267,4 +269,3 @@ contract SafePoll is SepoliaConfig {
         return true;
     }
 }
-
