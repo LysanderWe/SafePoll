@@ -188,45 +188,66 @@ export function SurveyBrowse() {
   const isCreator = !!infoCreator && !!address && infoCreator.toLowerCase() === address.toLowerCase();
 
   return (
-    <div className="status-card">
-      <h2 className="status-title">Browse & Vote</h2>
-      <div>Choose a survey. All your choices are encrypted. </div>
-      <div className="form-group" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div className="form-label">Total Surveys: {String(totalSurveys || 0n)}</div>
+    <div className="card">
+      <div className="card-header">
+        <h2 className="card-title">Browse & Vote</h2>
+        <p className="card-description">
+          Choose a survey to participate in. All your choices are encrypted and private.
+        </p>
+        <div className="flex justify-between items-center mt-4">
+          <span className="text-sm text-gray-600">
+            Total Surveys: {String(totalSurveys || 0n)}
+          </span>
+        </div>
       </div>
 
-      {/* List all surveys */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {allSurveys.map((s, idx) => (
-          <div key={idx} className="status-item" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ flex: 1 }}>
-              <div className="status-label">#{Number(s.id)} — {s.title}</div>
-              <div className="status-value" style={{ color: '#6b7280' }}>{s.description}</div>
-            </div>
-            <div className="status-item" style={{ border: 'none' }}>
-              <div className="status-label">Status</div>
-              <div className="status-value">{s.isActive ? 'Active' : 'Ended'}</div>
-            </div>
-            <div className="status-item" style={{ border: 'none' }}>
-              <div className="status-label">Votes</div>
-              <div className="status-value">{String(s.totalVotes)}</div>
-            </div>
-            <button
-              className="submit-button"
-              style={{ width: 'auto' }}
-              onClick={() => {
-                const id = String(Number(s.id));
-                window.history.pushState(null, '', `/survey/${id}`);
-                window.dispatchEvent(new PopStateEvent('popstate'));
-              }}
-            >
-              Open
-            </button>
+      <div className="card-body">
+        {allSurveys.length === 0 ? (
+          <div className="text-center py-8">
+            <div className="text-gray-400 text-6xl mb-4">📊</div>
+            <h3 className="text-lg font-semibold text-gray-700 mb-2">No surveys available</h3>
+            <p className="text-gray-600">Be the first to create a survey!</p>
           </div>
-        ))}
+        ) : (
+          <div className="flex flex-col gap-4">
+            {allSurveys.map((s, idx) => (
+              <div key={idx} className="card bg-gray-50 border-gray-100">
+                <div className="card-body">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className="badge badge-info">#{Number(s.id)}</span>
+                        <h3 className="font-semibold text-gray-900">{s.title}</h3>
+                        <span className={`badge ${s.isActive ? 'badge-success' : 'badge-warning'}`}>
+                          {s.isActive ? 'Active' : 'Ended'}
+                        </span>
+                      </div>
+                      <p className="text-gray-600 text-sm mb-3">{s.description}</p>
+                      <div className="flex items-center gap-4 text-xs text-gray-500">
+                        <span>👥 {String(s.totalVotes)} votes</span>
+                        <span>📝 {String(s.questionCount)} questions</span>
+                        <span>📅 Created {new Date(Number(s.createdAt) * 1000).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                    <div className="ml-4">
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => {
+                          const id = String(Number(s.id));
+                          window.history.pushState(null, '', `/survey/${id}`);
+                          window.dispatchEvent(new PopStateEvent('popstate'));
+                        }}
+                      >
+                        Participate
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-
-      {/* Detail view has moved to /survey/:id */}
     </div>
   );
 }

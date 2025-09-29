@@ -155,73 +155,159 @@ export function Survey() {
   const isCreator = info && address && info.creator.toLowerCase() === address.toLowerCase();
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb' }}>
+    <div style={{ minHeight: '100vh' }}>
       <Header />
-      <main className="main-content">
-        <div className="status-card">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button className="submit-button" style={{ width: 'auto' }} onClick={() => { window.history.pushState(null, '', '/'); window.dispatchEvent(new PopStateEvent('popstate')); }}>Back</button>
-            <h2 className="status-title" style={{ margin: 0 }}>Survey</h2>
+      <main className="container" style={{ paddingTop: 'var(--space-8)', paddingBottom: 'var(--space-16)' }}>
+        <div className="max-w-4xl mx-auto">
+          <div className="mb-6">
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                window.history.pushState(null, '', '/');
+                window.dispatchEvent(new PopStateEvent('popstate'));
+              }}
+            >
+              ← Back to Browse
+            </button>
           </div>
 
-          {info && (
-            <div style={{ marginTop: 8 }}>
-              <div className="status-item">
-                <div className="status-label">Title</div>
-                <div className="status-value">{info.title}</div>
+          {loading ? (
+            <div className="card">
+              <div className="card-body text-center py-8">
+                <div className="text-4xl mb-4">⏳</div>
+                <p className="text-gray-600">Loading survey...</p>
               </div>
-              <div className="status-item" style={{ marginTop: 8 }}>
-                <div className="status-label">Description</div>
-                <div className="status-value">{info.description}</div>
-              </div>
-              <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
-                <div className="status-item" style={{ flex: 1 }}>
-                  <div className="status-label">Status</div>
-                  <div className="status-value">{info.isActive ? 'Active' : 'Ended'}</div>
+            </div>
+          ) : info ? (
+            <div className="flex flex-col gap-6">
+              <div className="card">
+                <div className="card-header">
+                  <div className="flex items-center gap-3">
+                    <span className="badge badge-info">#{Number(info.id)}</span>
+                    <h1 className="card-title">{info.title}</h1>
+                    <span className={`badge ${info.isActive ? 'badge-success' : 'badge-warning'}`}>
+                      {info.isActive ? 'Active' : 'Ended'}
+                    </span>
+                  </div>
+                  {info.description && (
+                    <p className="card-description mt-2">{info.description}</p>
+                  )}
                 </div>
-                <div className="status-item" style={{ flex: 1 }}>
-                  <div className="status-label">Votes</div>
-                  <div className="status-value">{String(info.totalVotes)}</div>
+
+                <div className="card-body">
+                  <div className="flex items-center gap-6 text-sm text-gray-600">
+                    <span>👥 {String(info.totalVotes)} votes</span>
+                    <span>📝 {String(info.questionCount)} questions</span>
+                    <span>📅 Created {new Date(Number(info.createdAt) * 1000).toLocaleDateString()}</span>
+                    {isCreator && <span className="badge badge-info">You created this survey</span>}
+                  </div>
+
+                  {isCreator && (
+                    <div className="flex gap-3 mt-4">
+                      {info.isActive && (
+                        <button onClick={endSurvey} className="btn btn-secondary">
+                          End Survey
+                        </button>
+                      )}
+                      {!info.isActive && (
+                        <button onClick={requestDecryption} className="btn btn-primary">
+                          Request Decryption
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {isCreator && (
-                <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
-                  {info.isActive && <button onClick={endSurvey} className="submit-button" style={{ width: 'auto' }}>End Survey</button>}
-                  {!info.isActive && <button onClick={requestDecryption} className="submit-button" style={{ width: 'auto' }}>Request Decryption</button>}
-                </div>
-              )}
+              {questions.length > 0 && (
+                <div className="card">
+                  <div className="card-header">
+                    <h2 className="card-title">
+                      {info.isActive ? 'Submit Your Responses' : 'Survey Questions & Results'}
+                    </h2>
+                    <p className="card-description">
+                      {info.isActive
+                        ? 'Your responses will be encrypted and anonymous.'
+                        : 'This survey has ended. You can view the results if they have been decrypted.'}
+                    </p>
+                  </div>
 
-              {!loading && questions.length > 0 && (
-                <div style={{ marginTop: 16 }}>
-                  {questions.map((q, qi) => (
-                    <div key={qi} className="status-item" style={{ marginBottom: 8 }}>
-                      <div className="status-label">Q{qi + 1}: {q.text}</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-                        {q.options.map((opt, oi) => (
-                          <label key={oi} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <input type="radio" name={`q-${qi}`} checked={choices[qi] === oi} onChange={() => setChoices((c) => c.map((v, idx) => idx === qi ? oi : v))} disabled={!info.isActive} />
-                            <span>{opt}</span>
-                            {results && <span style={{ marginLeft: 'auto', color: '#6b7280' }}>{results[qi][oi]}</span>}
-                          </label>
-                        ))}
+                  <div className="card-body">
+                    <div className="flex flex-col gap-6">
+                      {questions.map((q, qi) => (
+                        <div key={qi} className="card bg-gray-50 border-gray-200">
+                          <div className="card-body">
+                            <h3 className="font-semibold text-gray-900 mb-4">
+                              Question {qi + 1}: {q.text}
+                            </h3>
+                            <div className="flex flex-col gap-3">
+                              {q.options.map((opt, oi) => (
+                                <label
+                                  key={oi}
+                                  className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-all ${
+                                    choices[qi] === oi
+                                      ? 'border-blue-500 bg-blue-50'
+                                      : 'border-gray-200 hover:border-gray-300 hover:bg-white'
+                                  } ${!info.isActive ? 'cursor-default' : ''}`}
+                                >
+                                  <input
+                                    type="radio"
+                                    name={`q-${qi}`}
+                                    checked={choices[qi] === oi}
+                                    onChange={() =>
+                                      setChoices((c) =>
+                                        c.map((v, idx) => (idx === qi ? oi : v))
+                                      )
+                                    }
+                                    disabled={!info.isActive}
+                                    className="w-4 h-4 text-blue-600"
+                                  />
+                                  <span className="flex-1">{opt}</span>
+                                  {results && (
+                                    <span className="badge badge-info">
+                                      {results[qi][oi]} votes
+                                    </span>
+                                  )}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+
+                      <div className="flex justify-end gap-3">
+                        {info.isActive && (
+                          <button
+                            onClick={submitVotes}
+                            disabled={submitting || choices.some(c => c < 0)}
+                            className="btn btn-primary"
+                          >
+                            {submitting ? 'Submitting...' : 'Submit Votes'}
+                          </button>
+                        )}
+
+                        {!info.isActive && (
+                          <button
+                            onClick={publicDecryptResults}
+                            disabled={decrypting}
+                            className="btn btn-primary"
+                          >
+                            {decrypting ? 'Decrypting...' : 'View Results'}
+                          </button>
+                        )}
                       </div>
                     </div>
-                  ))}
-
-                  {info.isActive && (
-                    <button onClick={submitVotes} disabled={submitting} className="submit-button" style={{ width: 'auto' }}>
-                      {submitting ? 'Submitting...' : 'Submit Votes'}
-                    </button>
-                  )}
-
-                  {!info.isActive && (
-                    <button onClick={publicDecryptResults} disabled={decrypting} className="submit-button" style={{ width: 'auto', marginTop: 8 }}>
-                      {decrypting ? 'Decrypting...' : 'Decrypt Public Results'}
-                    </button>
-                  )}
+                  </div>
                 </div>
               )}
+            </div>
+          ) : (
+            <div className="card">
+              <div className="card-body text-center py-8">
+                <div className="text-4xl mb-4">❌</div>
+                <h3 className="text-lg font-semibold text-gray-700 mb-2">Survey not found</h3>
+                <p className="text-gray-600">The survey you're looking for doesn't exist.</p>
+              </div>
             </div>
           )}
         </div>

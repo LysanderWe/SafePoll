@@ -1,50 +1,99 @@
 .header {
-  background-color: white;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--gray-200);
+  box-shadow: var(--shadow-sm);
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
 
 .header-container {
-  max-width: 80rem;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 0 1rem;
+  padding: 0 var(--space-4);
 }
 
 .header-content {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem 0;
+  padding: var(--space-4) 0;
+  min-height: 4rem;
 }
 
 .header-left {
   display: flex;
   align-items: center;
+  gap: var(--space-3);
 }
 
 .header-title {
-  font-size: 1.5rem;
+  font-size: 1.75rem;
   font-weight: 700;
-  color: #111827;
+  background: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-800) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.025em;
+}
+
+.header-logo {
+  width: 2.5rem;
+  height: 2.5rem;
+  background: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-700) 100%);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 1.125rem;
 }
 
 .header-badge {
-  margin-left: 0.75rem;
-  padding: 0.25rem 0.5rem;
+  padding: var(--space-1) var(--space-3);
   font-size: 0.75rem;
   font-weight: 500;
-  background-color: #dbeafe;
-  color: #1e40af;
+  background: linear-gradient(135deg, var(--primary-100) 0%, var(--primary-200) 100%);
+  color: var(--primary-800);
   border-radius: 9999px;
+  border: 1px solid var(--primary-300);
+}
+
+.header-nav {
+  display: none;
+  gap: var(--space-6);
+}
+
+.header-nav-link {
+  color: var(--gray-600);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: color 0.2s ease-in-out;
+}
+
+.header-nav-link:hover {
+  color: var(--primary-600);
+}
+
+.header-nav-link.active {
+  color: var(--primary-600);
 }
 
 @media (min-width: 640px) {
   .header-container {
-    padding: 0 1.5rem;
+    padding: 0 var(--space-6);
+  }
+
+  .header-nav {
+    display: flex;
   }
 }
 
 @media (min-width: 1024px) {
   .header-container {
-    padding: 0 2rem;
+    padding: 0 var(--space-8);
   }
 }

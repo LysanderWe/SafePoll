@@ -24,7 +24,7 @@ function App() {
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider locale="en">
-          <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb' }}>
+          <div style={{ minHeight: '100vh' }}>
             {match ? <Survey /> : <SurveyApp />}
           </div>
         </RainbowKitProvider>

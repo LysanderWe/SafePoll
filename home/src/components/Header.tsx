@@ -7,10 +7,15 @@ export function Header() {
       <div className="header-container">
         <div className="header-content">
           <div className="header-left">
+            <div className="header-logo">
+              🔒
+            </div>
             <h1 className="header-title">
               SafePoll
             </h1>
-            
+            <span className="header-badge">
+              Beta
+            </span>
           </div>
           <ConnectButton />
         </div>
