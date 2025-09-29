@@ -15,6 +15,20 @@ export function SurveyBrowse() {
   const signerPromise = useEthersSigner();
   const publicClient = usePublicClient();
 
+  function normalizeSurvey(d: any): SurveyInfo {
+    return {
+      id: BigInt(d?.id ?? d?.[0] ?? 0),
+      title: String(d?.title ?? d?.[1] ?? ''),
+      description: String(d?.description ?? d?.[2] ?? ''),
+      creator: (d?.creator ?? d?.[3] ?? '0x0000000000000000000000000000000000000000') as `0x${string}`,
+      isActive: Boolean(d?.isActive ?? d?.[4] ?? false),
+      resultsDecrypted: Boolean(d?.resultsDecrypted ?? d?.[5] ?? false),
+      questionCount: BigInt(d?.questionCount ?? d?.[6] ?? 0),
+      totalVotes: BigInt(d?.totalVotes ?? d?.[7] ?? 0),
+      createdAt: BigInt(d?.createdAt ?? d?.[8] ?? 0),
+    };
+  }
+
   const { data: totalSurveys } = useReadContract({ address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'getTotalSurveys' });
   const [surveyId, setSurveyId] = useState<string>('');
   const [allSurveys, setAllSurveys] = useState<SurveyInfo[]>([]);
@@ -49,8 +63,8 @@ export function SurveyBrowse() {
             abi: CONTRACT_ABI,
             functionName: 'getSurveyInfo',
             args: [BigInt(i)],
-          }) as SurveyInfo;
-          list.push(data);
+          });
+          list.push(normalizeSurvey(data));
         }
         setAllSurveys(list);
         // auto-select first if none selected
@@ -69,7 +83,8 @@ export function SurveyBrowse() {
       setLoadingQs(true);
       try {
         const arr: { text: string; options: string[] }[] = [];
-        for (let i = 0; i < Number(info.questionCount); i++) {
+        const qCount = Number(((info as any)?.questionCount ?? (info as any)?.[6] ?? 0));
+        for (let i = 0; i < qCount; i++) {
           if (!publicClient) return;
           const [text, options] = await publicClient.readContract({ address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'getQuestion', args: [parsedId, BigInt(i)] }) as [string, string[]];
           arr.push({ text, options });
@@ -169,7 +184,8 @@ export function SurveyBrowse() {
     }
   };
 
-  const isCreator = info && address && info.creator.toLowerCase() === address.toLowerCase();
+  const infoCreator = (info && ((info as any).creator ?? (info as any)?.[3])) as string | undefined;
+  const isCreator = !!infoCreator && !!address && infoCreator.toLowerCase() === address.toLowerCase();
 
   return (
     <div className="status-card">
@@ -203,29 +219,30 @@ export function SurveyBrowse() {
 
       {info && (
         <div style={{ marginTop: 8 }}>
+          {(() => { const d = normalizeSurvey(info); return (<>
           <div className="status-item">
             <div className="status-label">Title</div>
-            <div className="status-value">{info.title}</div>
+            <div className="status-value">{d.title}</div>
           </div>
           <div className="status-item" style={{ marginTop: 8 }}>
             <div className="status-label">Description</div>
-            <div className="status-value">{info.description}</div>
+            <div className="status-value">{d.description}</div>
           </div>
           <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
             <div className="status-item" style={{ flex: 1 }}>
               <div className="status-label">Status</div>
-              <div className="status-value">{info.isActive ? 'Active' : 'Ended'}</div>
+              <div className="status-value">{d.isActive ? 'Active' : 'Ended'}</div>
             </div>
             <div className="status-item" style={{ flex: 1 }}>
               <div className="status-label">Votes</div>
-              <div className="status-value">{String(info.totalVotes)}</div>
+              <div className="status-value">{String(d.totalVotes)}</div>
             </div>
           </div>
 
           {isCreator && (
             <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
-              {info.isActive && <button onClick={endSurvey} className="submit-button" style={{ width: 'auto' }}>End Survey</button>}
-              {!info.isActive && <button onClick={requestDecryption} className="submit-button" style={{ width: 'auto' }}>Request Decryption</button>}
+              {d.isActive && <button onClick={endSurvey} className="submit-button" style={{ width: 'auto' }}>End Survey</button>}
+              {!d.isActive && <button onClick={requestDecryption} className="submit-button" style={{ width: 'auto' }}>Request Decryption</button>}
             </div>
           )}
 
@@ -237,7 +254,7 @@ export function SurveyBrowse() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
                     {q.options.map((opt, oi) => (
                       <label key={oi} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <input type="radio" name={`q-${qi}`} checked={choices[qi] === oi} onChange={() => setChoices((c) => c.map((v, idx) => idx === qi ? oi : v))} disabled={!info.isActive} />
+                        <input type="radio" name={`q-${qi}`} checked={choices[qi] === oi} onChange={() => setChoices((c) => c.map((v, idx) => idx === qi ? oi : v))} disabled={!d.isActive} />
                         <span>{opt}</span>
                         {results && <span style={{ marginLeft: 'auto', color: '#6b7280' }}>{results[qi][oi]}</span>}
                       </label>
@@ -246,19 +263,20 @@ export function SurveyBrowse() {
                 </div>
               ))}
 
-              {info.isActive && (
+              {d.isActive && (
                 <button onClick={submitVotes} disabled={submitting} className="submit-button" style={{ width: 'auto' }}>
                   {submitting ? 'Submitting...' : 'Submit Votes'}
                 </button>
               )}
 
-              {!info.isActive && (
+              {!d.isActive && (
                 <button onClick={publicDecryptResults} disabled={decrypting} className="submit-button" style={{ width: 'auto', marginTop: 8 }}>
                   {decrypting ? 'Decrypting...' : 'Decrypt Public Results'}
                 </button>
               )}
             </div>
           )}
+        </>); })()}
         </div>
       )}
     </div>
