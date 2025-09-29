@@ -190,6 +190,7 @@ export function SurveyBrowse() {
   return (
     <div className="status-card">
       <h2 className="status-title">Browse & Vote</h2>
+      <div>Choose a survey. All your choices are encrypted. </div>
       <div className="form-group" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div className="form-label">Total Surveys: {String(totalSurveys || 0n)}</div>
       </div>
@@ -210,75 +211,22 @@ export function SurveyBrowse() {
               <div className="status-label">Votes</div>
               <div className="status-value">{String(s.totalVotes)}</div>
             </div>
-            <button className="submit-button" style={{ width: 'auto' }} onClick={() => setSurveyId(String(Number(s.id)))}>
+            <button
+              className="submit-button"
+              style={{ width: 'auto' }}
+              onClick={() => {
+                const id = String(Number(s.id));
+                window.history.pushState(null, '', `/survey/${id}`);
+                window.dispatchEvent(new PopStateEvent('popstate'));
+              }}
+            >
               Open
             </button>
           </div>
         ))}
       </div>
 
-      {info && (
-        <div style={{ marginTop: 8 }}>
-          {(() => { const d = normalizeSurvey(info); return (<>
-          <div className="status-item">
-            <div className="status-label">Title</div>
-            <div className="status-value">{d.title}</div>
-          </div>
-          <div className="status-item" style={{ marginTop: 8 }}>
-            <div className="status-label">Description</div>
-            <div className="status-value">{d.description}</div>
-          </div>
-          <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
-            <div className="status-item" style={{ flex: 1 }}>
-              <div className="status-label">Status</div>
-              <div className="status-value">{d.isActive ? 'Active' : 'Ended'}</div>
-            </div>
-            <div className="status-item" style={{ flex: 1 }}>
-              <div className="status-label">Votes</div>
-              <div className="status-value">{String(d.totalVotes)}</div>
-            </div>
-          </div>
-
-          {isCreator && (
-            <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
-              {d.isActive && <button onClick={endSurvey} className="submit-button" style={{ width: 'auto' }}>End Survey</button>}
-              {!d.isActive && <button onClick={requestDecryption} className="submit-button" style={{ width: 'auto' }}>Request Decryption</button>}
-            </div>
-          )}
-
-          {!loadingQs && questions.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              {questions.map((q, qi) => (
-                <div key={qi} className="status-item" style={{ marginBottom: 8 }}>
-                  <div className="status-label">Q{qi + 1}: {q.text}</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-                    {q.options.map((opt, oi) => (
-                      <label key={oi} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <input type="radio" name={`q-${qi}`} checked={choices[qi] === oi} onChange={() => setChoices((c) => c.map((v, idx) => idx === qi ? oi : v))} disabled={!d.isActive} />
-                        <span>{opt}</span>
-                        {results && <span style={{ marginLeft: 'auto', color: '#6b7280' }}>{results[qi][oi]}</span>}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
-
-              {d.isActive && (
-                <button onClick={submitVotes} disabled={submitting} className="submit-button" style={{ width: 'auto' }}>
-                  {submitting ? 'Submitting...' : 'Submit Votes'}
-                </button>
-              )}
-
-              {!d.isActive && (
-                <button onClick={publicDecryptResults} disabled={decrypting} className="submit-button" style={{ width: 'auto', marginTop: 8 }}>
-                  {decrypting ? 'Decrypting...' : 'Decrypt Public Results'}
-                </button>
-              )}
-            </div>
-          )}
-        </>); })()}
-        </div>
-      )}
+      {/* Detail view has moved to /survey/:id */}
     </div>
   );
 }
