@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useAccount, useReadContract } from 'wagmi';
+import { useAccount, useReadContract, usePublicClient } from 'wagmi';
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from '../config/contracts';
 import { useZamaInstance } from '../hooks/useZamaInstance';
 import { useEthersSigner } from '../hooks/useEthersSigner';
@@ -13,6 +13,7 @@ export function SurveyBrowse() {
   const { address } = useAccount();
   const { instance } = useZamaInstance();
   const signerPromise = useEthersSigner();
+  const publicClient = usePublicClient();
 
   const { data: totalSurveys } = useReadContract({ address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'getTotalSurveys' });
   const [surveyId, setSurveyId] = useState<string>('');
@@ -40,11 +41,10 @@ export function SurveyBrowse() {
           setSurveyId('');
           return;
         }
-        const { getPublicClient } = await import('wagmi/actions');
-        const client = getPublicClient();
+        if (!publicClient) return;
         const list: SurveyInfo[] = [] as any;
         for (let i = 1; i <= total; i++) {
-          const data = await client.readContract({
+          const data = await publicClient.readContract({
             address: CONTRACT_ADDRESS,
             abi: CONTRACT_ABI,
             functionName: 'getSurveyInfo',
@@ -60,7 +60,7 @@ export function SurveyBrowse() {
       }
     };
     loadAll();
-  }, [totalSurveys]);
+  }, [totalSurveys, publicClient]);
 
   // Lightweight question loader using viem read calls sequentially
   useEffect(() => {
@@ -70,12 +70,8 @@ export function SurveyBrowse() {
       try {
         const arr: { text: string; options: string[] }[] = [];
         for (let i = 0; i < Number(info.questionCount); i++) {
-          const res = await (window as any).wagmi?.getPublicClient?.(); // avoid lints
-          // Instead of above, call through wagmi's viem client via public client
-          const { getPublicClient } = await import('wagmi/actions');
-          const client = getPublicClient();
-          // @ts-ignore chain is set by provider
-          const [text, options] = await client.readContract({ address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'getQuestion', args: [parsedId, BigInt(i)] }) as [string, string[]];
+          if (!publicClient) return;
+          const [text, options] = await publicClient.readContract({ address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'getQuestion', args: [parsedId, BigInt(i)] }) as [string, string[]];
           arr.push({ text, options });
         }
         setQuestions(arr);
@@ -87,7 +83,7 @@ export function SurveyBrowse() {
       }
     };
     load();
-  }, [parsedId, info]);
+  }, [parsedId, info, publicClient]);
 
   const submitVotes = async () => {
     if (!instance) return alert('Loading Zama');
@@ -143,12 +139,11 @@ export function SurveyBrowse() {
     try {
       // collect handles for all option counts
       const handles: string[] = [];
+      if (!publicClient) return;
       for (let qi = 0; qi < Number(info.questionCount); qi++) {
-        const { getPublicClient } = await import('wagmi/actions');
-        const client = getPublicClient();
-        const [_, options] = await client.readContract({ address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'getQuestion', args: [parsedId, BigInt(qi)] }) as [string, string[]];
+        const [_, options] = await publicClient.readContract({ address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'getQuestion', args: [parsedId, BigInt(qi)] }) as [string, string[]];
         for (let oi = 0; oi < options.length; oi++) {
-          const h = await client.readContract({ address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'getEncryptedOptionCount', args: [parsedId, BigInt(qi), BigInt(oi)] }) as `0x${string}`;
+          const h = await publicClient.readContract({ address: CONTRACT_ADDRESS, abi: CONTRACT_ABI, functionName: 'getEncryptedOptionCount', args: [parsedId, BigInt(qi), BigInt(oi)] }) as `0x${string}`;
           handles.push(h);
         }
       }
